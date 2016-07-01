@@ -1,0 +1,64 @@
+1、需求：2016年2月17号-2016年3月17号 至少有三次登陆同花顺行情软件的用户userid,提取100W个userid用户，用户需要绑定手机
+select uid 
+from
+    (select uid, count(p_date) as nums
+	from default.pc_login
+	where p_date >= '20160217' and p_date <= '20160317'
+	group by uid 
+	having count(p_date) >= 3) a
+inner join default.user_bind_state b
+on a.uid = b.userid
+where type = 'mobile'
+limit 1000000
+
+2.提供个股关注度历史数据
+需求背景：对比进入客户端个股F10页面的UV数据与对应个股股价（或者价差）的关系
+具体需求：数据时间段：2016年3月1号---2016年3月10号 每天的8:00--9:30访问个股F10页面的uv数据
+具体个股如下：科大智能 富瑞特装 雅戈尔 恒生电子 东方财富 中发科技 中国平安 掌趣科技 光纤传媒 上海普天 华谊兄弟 贵州茅台 中国中车 中国远洋 中国国航 特力A
+
+//这个版本不行？？可能是一天不是24h。 (⊙﹏⊙)b)
+select stockcode, u_nums
+from(
+	select stockcode, count(uid) as u_nums
+	from weblog_base a 
+	where p_date >= '20160301' and p_date <= '20160310'
+	and (a.time2)%(24*60*60) > unix_timestamp('2016-03-01 09:00:00')%(24*60*60)
+	and (a.time2)%(24*60*60) < unix_timestamp('2016-03-10 10:30:00')%(24*60*60)
+	group by stockcode) a
+left join default.ods_biz_stock_code_dd b 
+on a.stockcode = b.stock_code
+where stock_name in ('科大智能','富瑞特装','雅戈尔','恒生电子','东方财富','中发科技','中国平安','掌趣科技','光纤传媒','上海普天','华谊兄弟','贵州茅台','中国中车','中国远洋','中国国航','特力A')
+
+//另外一个版本，把时间戳转换为2016-03-01 09:00:00这种格式。
+
+select stockcode, u_nums
+from(
+	select stockcode, count(uid) as u_nums
+	from weblog_base a 
+	where p_date >= '20160301' and p_date <= '20160310'
+	and hour(from_unixtime(a.time2,'yyyy-MM-dd HH:mm:ss'))*60+minute(from_unixtime(a.time2,'yyyy-MM-dd HH:mm:ss')) > 9*60
+	and hour(from_unixtime(a.time2,'yyyy-MM-dd HH:mm:ss'))*60+minute(from_unixtime(a.time2,'yyyy-MM-dd HH:mm:ss')) < 10*60+30
+	group by stockcode) a
+left join default.ods_biz_stock_code_dd b 
+on a.stockcode = b.stock_code
+where stock_name in ('科大智能','富瑞特装','雅戈尔','恒生电子','东方财富','中发科技','中国平安','掌趣科技','光纤传媒','上海普天','华谊兄弟','贵州茅台','中国中车','中国远洋','中国国航','特力A')
+
+3.11111 300033 123456 1 1 0 
+11111 300034 123480 2 1 1 
+11111 300035 123482 3 1 2 
+11111 300035 123488 4 2 2 
+11111 300036 123498 5 1 4 
+11111 300035 123510 6 2 4 
+数据整理
+1、使用 row_number userid 分组，time 顺序排列，打上序号 rank1
+2、再次使用 row_number 以 userid code 分组，rank1 排序，打上序号 rank2
+3、计算差值 rank1 - rank2 = tt
+select code, sum(Tong_Gu), sum(Yi_Gu) from
+	(select userid, code, count(tt) as Tong_Gu, count(distinct tt) as Yi_Gu
+	from
+		(select *,rank1-rank2 as tt from
+		(select userid,code,time,rank1,rank() over(PARTITION by userid,code order by rank1 asc) as rank2 from
+		(select userid,code,time,rank() over(PARTITION by userid order by time asc) as rank1 from
+		(select userid,scode as code,time from default.pc_action_detail) a) b) c) d
+	group by userid, code) e
+group by code
